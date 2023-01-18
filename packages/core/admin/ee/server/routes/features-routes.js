@@ -43,4 +43,24 @@ module.exports = {
       },
     },
   ],
+  'audit-logs': [
+    {
+      method: 'GET',
+      path: '/audit-logs',
+      handler: 'auditLogs.findMany',
+      config: {
+        // @TODO: Check to right permissions
+        policies: ['admin::isAuthenticatedAdmin'],
+      },
+    },
+    {
+      method: 'GET',
+      path: '/audit-logs/:id',
+      handler: 'auditLogs.findOne',
+      config: {
+        // @TODO: Check to right permissions
+        policies: ['admin::isAuthenticatedAdmin'],
+      },
+    },
+  ],
 };
