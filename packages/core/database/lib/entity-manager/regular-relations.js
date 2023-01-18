@@ -198,60 +198,42 @@ const cleanOrderColumns = async ({ id, attribute, db, inverseRelIds, transaction
     return;
   }
 
-  // Handle databases that don't support window function ROW_NUMBER
-  if (!strapi.db.dialect.supportsWindowFunctions()) {
-    await cleanOrderColumnsForOldDatabases({ id, attribute, db, inverseRelIds, transaction: trx });
-    return;
-  }
-
-  const { joinTable } = attribute;
-  const { joinColumn, inverseJoinColumn, orderColumnName, inverseOrderColumnName } = joinTable;
-  const update = [];
-  const updateBinding = [];
-  const select = ['??'];
-  const selectBinding = ['id'];
-  const where = [];
-  const whereBinding = [];
-
-  if (hasOrderColumn(attribute) && id) {
-    update.push('?? = b.src_order');
-    updateBinding.push(orderColumnName);
-    select.push('ROW_NUMBER() OVER (PARTITION BY ?? ORDER BY ??) AS src_order');
-    selectBinding.push(joinColumn.name, orderColumnName);
-    where.push('?? = ?');
-    whereBinding.push(joinColumn.name, id);
-  }
-
-  if (hasInverseOrderColumn(attribute) && !isEmpty(inverseRelIds)) {
-    update.push('?? = b.inv_order');
-    updateBinding.push(inverseOrderColumnName);
-    select.push('ROW_NUMBER() OVER (PARTITION BY ?? ORDER BY ??) AS inv_order');
-    selectBinding.push(inverseJoinColumn.name, inverseOrderColumnName);
-    where.push(`?? IN (${inverseRelIds.map(() => '?').join(', ')})`);
-    whereBinding.push(inverseJoinColumn.name, ...inverseRelIds);
-  }
-
-  // raw query as knex doesn't allow updating from a subquery
-  // https://github.com/knex/knex/issues/2504
   switch (strapi.db.dialect.client) {
     case 'mysql':
-      await db.connection
-        .raw(
-          `UPDATE
-            ?? as a,
-            (
-              SELECT ${select.join(', ')}
-              FROM ??
-              WHERE ${where.join(' OR ')}
-            ) AS b
-          SET ${update.join(', ')}
-          WHERE b.id = a.id`,
-          [joinTable.name, ...selectBinding, joinTable.name, ...whereBinding, ...updateBinding]
-        )
-        .transacting(trx);
+      await cleanOrderColumnsForInnoDB({ id, attribute, db, inverseRelIds, transaction: trx });
       break;
     default: {
+      const { joinTable } = attribute;
+      const { joinColumn, inverseJoinColumn, orderColumnName, inverseOrderColumnName } = joinTable;
+      const update = [];
+      const updateBinding = [];
+      const select = ['??'];
+      const selectBinding = ['id'];
+      const where = [];
+      const whereBinding = [];
+
+      if (hasOrderColumn(attribute) && id) {
+        update.push('?? = b.src_order');
+        updateBinding.push(orderColumnName);
+        select.push('ROW_NUMBER() OVER (PARTITION BY ?? ORDER BY ??) AS src_order');
+        selectBinding.push(joinColumn.name, orderColumnName);
+        where.push('?? = ?');
+        whereBinding.push(joinColumn.name, id);
+      }
+
+      if (hasInverseOrderColumn(attribute) && !isEmpty(inverseRelIds)) {
+        update.push('?? = b.inv_order');
+        updateBinding.push(inverseOrderColumnName);
+        select.push('ROW_NUMBER() OVER (PARTITION BY ?? ORDER BY ??) AS inv_order');
+        selectBinding.push(inverseJoinColumn.name, inverseOrderColumnName);
+        where.push(`?? IN (${inverseRelIds.map(() => '?').join(', ')})`);
+        whereBinding.push(inverseJoinColumn.name, ...inverseRelIds);
+      }
+
       const joinTableName = addSchema(joinTable.name);
+
+      // raw query as knex doesn't allow updating from a subquery
+      // https://github.com/knex/knex/issues/2504
       await db.connection
         .raw(
           `UPDATE ?? as a
@@ -265,24 +247,29 @@ const cleanOrderColumns = async ({ id, attribute, db, inverseRelIds, transaction
           [joinTableName, ...updateBinding, ...selectBinding, joinTableName, ...whereBinding]
         )
         .transacting(trx);
+
+      /*
+        `UPDATE :joinTable: as a
+          SET :orderColumn: = b.src_order, :inverseOrderColumn: = b.inv_order
+          FROM (
+            SELECT
+              id,
+              ROW_NUMBER() OVER ( PARTITION BY :joinColumn: ORDER BY :orderColumn:) AS src_order,
+              ROW_NUMBER() OVER ( PARTITION BY :inverseJoinColumn: ORDER BY :inverseOrderColumn:) AS inv_order
+            FROM :joinTable:
+            WHERE :joinColumn: = :id OR :inverseJoinColumn: IN (:inverseRelIds)
+          ) AS b
+          WHERE b.id = a.id`,
+      */
     }
-    /*
-      `UPDATE :joinTable: as a
-        SET :orderColumn: = b.src_order, :inverseOrderColumn: = b.inv_order
-        FROM (
-          SELECT
-            id,
-            ROW_NUMBER() OVER ( PARTITION BY :joinColumn: ORDER BY :orderColumn:) AS src_order,
-            ROW_NUMBER() OVER ( PARTITION BY :inverseJoinColumn: ORDER BY :inverseOrderColumn:) AS inv_order
-          FROM :joinTable:
-          WHERE :joinColumn: = :id OR :inverseJoinColumn: IN (:inverseRelIds)
-        ) AS b
-        WHERE b.id = a.id`,
-    */
   }
 };
 
-const cleanOrderColumnsForOldDatabases = async ({
+/*
+ * Ensure that orders are following a 1, 2, 3 sequence, without gap.
+ * The use of a temporary table instead of a window function makes the query compatible with MySQL 5 and prevents some deadlocks to happen in innoDB databases
+ */
+const cleanOrderColumnsForInnoDB = async ({
   id,
   attribute,
   db,
@@ -309,7 +296,9 @@ const cleanOrderColumnsForOldDatabases = async ({
                 FROM :joinTableName: b
                 WHERE a.:orderColumnName: >= b.:orderColumnName: AND a.:joinColumnName: = b.:joinColumnName: AND a.:joinColumnName: = :id
               ) AS src_order
-            FROM :joinTableName: a`,
+            FROM :joinTableName: a
+            WHERE a.:joinColumnName: = :id
+            `,
           {
             tempOrderTableName,
             joinTableName: joinTable.name,
@@ -319,6 +308,9 @@ const cleanOrderColumnsForOldDatabases = async ({
           }
         )
         .transacting(trx);
+
+      // raw query as knex doesn't allow updating from a subquery
+      // https://github.com/knex/knex/issues/2504
       await db.connection
         .raw(
           `UPDATE ?? as a, (SELECT * FROM ??) AS b
@@ -338,7 +330,7 @@ const cleanOrderColumnsForOldDatabases = async ({
       await db.connection
         .raw(
           `
-          CREATE TEMPORARY TABLE ??
+          CREATE TABLE ??
             SELECT
               id,
               (
@@ -348,7 +340,9 @@ const cleanOrderColumnsForOldDatabases = async ({
                   .map(() => '?')
                   .join(', ')})
               ) AS inv_order
-            FROM ?? a`,
+            FROM ?? a
+            WHERE a.?? IN (${inverseRelIds.map(() => '?').join(', ')})
+            `,
           [
             tempInvOrderTableName,
             joinTable.name,
@@ -359,6 +353,8 @@ const cleanOrderColumnsForOldDatabases = async ({
             inverseJoinColumn.name,
             ...inverseRelIds,
             joinTable.name,
+            inverseJoinColumn.name,
+            ...inverseRelIds,
           ]
         )
         .transacting(trx);
@@ -371,9 +367,7 @@ const cleanOrderColumnsForOldDatabases = async ({
         )
         .transacting(trx);
     } finally {
-      await db.connection
-        .raw(`DROP TEMPORARY TABLE IF EXISTS ??`, [tempInvOrderTableName])
-        .transacting(trx);
+      await db.connection.raw(`DROP TABLE IF EXISTS ??`, [tempInvOrderTableName]).transacting(trx);
     }
   }
 };

@@ -10,7 +10,7 @@ const { isUsingTypeScriptSync } = require('@strapi/typescript-utils');
 const { env } = require('@strapi/utils');
 const ee = require('../../utils/ee');
 const machineID = require('../../utils/machine-id');
-const stringifyDeep = require('./stringify-deep');
+const { generateAdminUserHash } = require('./admin-user-hash');
 
 const defaultQueryOpts = {
   timeout: 1000,
@@ -30,39 +30,6 @@ const addPackageJsonStrapiMetadata = (metadata, strapi) => {
 };
 
 /**
- * Aggregate and returns all anonymous telemetry to send with telemetry events
- * NOTE: strapi.EE and ee.isEE are only available after load
- * @param {Object} strapi
- * @returns {Object} anonymous metadata
- */
-const getAnonymousMetadata = (strapi) => {
-  const isEE = strapi.EE === true && ee.isEE === true;
-
-  const serverRootPath = strapi.dirs.app.root;
-  const adminRootPath = path.join(strapi.dirs.app.root, 'src', 'admin');
-
-  const anonymousMetadata = {
-    environment: strapi.config.environment,
-    os: os.type(),
-    osPlatform: os.platform(),
-    osArch: os.arch(),
-    osRelease: os.release(),
-    nodeVersion: process.versions.node,
-    docker: process.env.DOCKER || isDocker(),
-    isCI: ciEnv.isCI,
-    version: strapi.config.get('info.strapi'),
-    projectType: isEE ? 'Enterprise' : 'Community',
-    useTypescriptOnServer: isUsingTypeScriptSync(serverRootPath),
-    useTypescriptOnAdmin: isUsingTypeScriptSync(adminRootPath),
-    isHostedOnStrapiCloud: env('STRAPI_HOSTING', null) === 'strapi.cloud',
-  };
-
-  addPackageJsonStrapiMetadata(anonymousMetadata, strapi);
-
-  return anonymousMetadata;
-};
-
-/**
  * Create a send function for event with all the necessary metadatas
  * @param {Object} strapi strapi app
  * @returns {Function} (event, payload) -> Promise{boolean}
@@ -70,24 +37,54 @@ const getAnonymousMetadata = (strapi) => {
 module.exports = (strapi) => {
   const { uuid } = strapi.config;
   const deviceId = machineID();
+  const isEE = strapi.EE === true && ee.isEE === true;
+
+  const serverRootPath = strapi.dirs.app.root;
+  const adminRootPath = path.join(strapi.dirs.app.root, 'src', 'admin');
+
+  const anonymousUserProperties = {
+    environment: strapi.config.environment,
+    os: os.type(),
+    osPlatform: os.platform(),
+    osArch: os.arch(),
+    osRelease: os.release(),
+    nodeVersion: process.versions.node,
+  };
+
+  const anonymousGroupProperties = {
+    docker: process.env.DOCKER || isDocker(),
+    isCI: ciEnv.isCI,
+    version: strapi.config.get('info.strapi'),
+    projectType: isEE ? 'Enterprise' : 'Community',
+    useTypescriptOnServer: isUsingTypeScriptSync(serverRootPath),
+    useTypescriptOnAdmin: isUsingTypeScriptSync(adminRootPath),
+    projectId: uuid,
+    isHostedOnStrapiCloud: env('STRAPI_HOSTING', null) === 'strapi.cloud',
+  };
+
+  addPackageJsonStrapiMetadata(anonymousGroupProperties, strapi);
 
   return async (event, payload = {}, opts = {}) => {
+    const userId = generateAdminUserHash();
+
     const reqParams = {
       method: 'POST',
       body: JSON.stringify({
         event,
-        uuid,
+        userId,
         deviceId,
-        properties: stringifyDeep({
-          ...payload,
-          ...getAnonymousMetadata(strapi),
-        }),
+        eventProperties: payload.eventProperties,
+        userProperties: userId ? { ...anonymousUserProperties, ...payload.userProperties } : {},
+        groupProperties: {
+          ...anonymousGroupProperties,
+          ...payload.groupProperties,
+        },
       }),
       ..._.merge({}, defaultQueryOpts, opts),
     };
 
     try {
-      const res = await fetch(`${ANALYTICS_URI}/track`, reqParams);
+      const res = await fetch(`${ANALYTICS_URI}/api/v2/track`, reqParams);
       return res.ok;
     } catch (err) {
       return false;
