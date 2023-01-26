@@ -14,8 +14,9 @@ import {
   Flex,
   Stack,
 } from '@strapi/design-system';
+import { SimpleMenu, MenuItem } from '@strapi/design-system/v2';
 import { useCMEditViewDataManager } from '@strapi/helper-plugin';
-import { Trash, Drag } from '@strapi/icons';
+import { Trash, Drag, More, ArrowDown, ArrowUp } from '@strapi/icons';
 
 import { useContentTypeLayout, useDragAndDrop } from '../../../hooks';
 import { composeRefs, getTrad, ItemTypes } from '../../../utils';
@@ -150,19 +151,44 @@ const DynamicZoneComponent = ({
 
   const accordionActions = !isFieldAllowed ? null : (
     <ActionsStack horizontal spacing={0} expanded={isOpen}>
-      <IconButtonCustom
-        noBorder
-        label={formatMessage(
-          {
-            id: getTrad('components.DynamicZone.delete-label'),
-            defaultMessage: 'Delete {name}',
-          },
-          { name: friendlyName }
-        )}
-        onClick={onRemoveComponentClick}
-      >
-        <Trash />
-      </IconButtonCustom>
+      <SimpleMenu label="Actions" as={IconButtonCustom} icon={<More />} noBorder>
+        <MenuItem onClick={onRemoveComponentClick}>
+          <Flex gap={2}>
+            <ArrowUp />
+            {formatMessage(
+              {
+                id: getTrad('components.DynamicZone.add-above-label'),
+                defaultMessage: 'Add component above {name}',
+              },
+              { name: friendlyName }
+            )}
+          </Flex>
+        </MenuItem>
+        <MenuItem onClick={onRemoveComponentClick}>
+          <Flex gap={2}>
+            <ArrowDown />
+            {formatMessage(
+              {
+                id: getTrad('components.DynamicZone.add-below-label'),
+                defaultMessage: 'Add component below {name}',
+              },
+              { name: friendlyName }
+            )}
+          </Flex>
+        </MenuItem>
+        <MenuItem onClick={onRemoveComponentClick}>
+          <Flex gap={2}>
+            <Trash />
+            {formatMessage(
+              {
+                id: getTrad('components.DynamicZone.delete-label'),
+                defaultMessage: 'Delete {name}',
+              },
+              { name: friendlyName }
+            )}
+          </Flex>
+        </MenuItem>
+      </SimpleMenu>
       <IconButton
         forwardedAs="div"
         role="button"
