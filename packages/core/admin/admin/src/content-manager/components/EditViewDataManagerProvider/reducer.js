@@ -154,16 +154,23 @@ const reducer = (state, action) =>
 
         const initialDataRelations = get(state, initialDataPath);
         const modifiedDataRelations = get(state, modifiedDataPath);
+        let count = 0;
 
         /**
          * Check if the values we're loading are already in initial
          * data if they are then we don't need to load them at all
          */
-        const valuesToLoad = value.filter((relation) => {
-          return !initialDataRelations.some((initialDataRelation) => {
-            return initialDataRelation.id === relation.id;
-          });
-        });
+        const valuesToLoad = value
+          .filter((relation) => {
+            return !initialDataRelations.some((initialDataRelation) => {
+              return initialDataRelation.id === relation.id;
+            });
+          })
+          .map((relation) => ({
+            ...relation,
+            __temp_key__:
+              modifiedDataRelations.length > 0 ? getMaxTempKey(modifiedDataRelations) + 1 : count++,
+          }));
 
         set(draftState, initialDataPath, uniqBy([...valuesToLoad, ...initialDataRelations], 'id'));
 
@@ -221,6 +228,8 @@ const reducer = (state, action) =>
 
         newRelations.splice(oldIndex, 1);
         newRelations.splice(newIndex, 0, currentItem);
+
+        console.log(newRelations);
 
         set(draftState, path, newRelations);
 
