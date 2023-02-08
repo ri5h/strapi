@@ -154,7 +154,7 @@ const reducer = (state, action) =>
 
         const initialDataRelations = get(state, initialDataPath);
         const modifiedDataRelations = get(state, modifiedDataPath);
-        let count = 0;
+        let count = 0 - modifiedDataRelations.length;
 
         /**
          * Check if the values we're loading are already in initial
@@ -168,8 +168,7 @@ const reducer = (state, action) =>
           })
           .map((relation) => ({
             ...relation,
-            __temp_key__:
-              modifiedDataRelations.length > 0 ? getMaxTempKey(modifiedDataRelations) + 1 : count++,
+            __temp_key__: count++,
           }));
 
         set(draftState, initialDataPath, uniqBy([...valuesToLoad, ...initialDataRelations], 'id'));
@@ -199,7 +198,12 @@ const reducer = (state, action) =>
           set(draftState, path, [value]);
         } else {
           const modifiedDataRelations = get(state, path);
-          const newRelations = [...modifiedDataRelations, value];
+          const lastItemTempKey = modifiedDataRelations.at(-1)?.__temp_key__ ?? -1;
+
+          const newRelations = [
+            ...modifiedDataRelations,
+            { ...value, __temp_key__: lastItemTempKey + 1 },
+          ];
           set(draftState, path, newRelations);
         }
 
@@ -226,10 +230,22 @@ const reducer = (state, action) =>
 
         const newRelations = [...modifiedDataRelations];
 
-        newRelations.splice(oldIndex, 1);
-        newRelations.splice(newIndex, 0, currentItem);
+        const nextItemKey =
+          modifiedDataRelations[newIndex + 1]?.__temp_key__ ??
+          modifiedDataRelations.at(-1).__temp_key__ + 1;
+        const prevItemKey =
+          modifiedDataRelations[newIndex - 1]?.__temp_key__ ??
+          modifiedDataRelations.at(0).__temp_key__ - 1;
 
-        console.log(newRelations);
+        const fractionalKey = (nextItemKey - prevItemKey) / 2 + prevItemKey;
+
+        /**
+         * TODO: you need to add some tests to this so you don't have to manually test it
+         * because its too hard.
+         */
+
+        newRelations.splice(oldIndex, 1);
+        newRelations.splice(newIndex, 0, { ...currentItem, __temp_key__: fractionalKey });
 
         set(draftState, path, newRelations);
 
