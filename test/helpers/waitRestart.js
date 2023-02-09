@@ -1,19 +1,17 @@
 'use strict';
 
-const request = require('request-promise-native');
+const fetch = require('node-fetch');
 
 module.exports = (initTime = 200) => {
   const ping = async () => {
     return new Promise((resolve, reject) => {
       // ping _health
-      request({
+      fetch({
         url: 'http://localhost:1337/_health',
         method: 'HEAD',
-        mode: 'no-cors',
-        json: true,
         headers: {
           'Content-Type': 'application/json',
-          'Keep-Alive': false,
+          'Keep-Alive': true,
         },
       }).then(resolve, reject);
     }).catch(() => {
