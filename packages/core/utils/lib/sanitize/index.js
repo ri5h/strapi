@@ -8,6 +8,7 @@ const { pipeAsync } = require('../async');
 
 const visitors = require('./visitors');
 const sanitizers = require('./sanitizers');
+const traverseQueryFilters = require('../traverse-query-filters');
 
 module.exports = {
   contentAPI: {
@@ -53,6 +54,25 @@ module.exports = {
         .forEach((sanitizer) => transforms.push(sanitizer(schema)));
 
       return pipeAsync(...transforms)(data);
+    },
+
+    params(params, schema, { auth } = {}) {
+      if (isArray(params)) {
+        return Promise.all(params.map((params) => this.params(params, schema, { auth })));
+      }
+
+      const transforms = [sanitizers.defaultSanitizeParams(schema)];
+
+      if (auth) {
+        transforms.push(traverseQueryFilters(visitors.removeRestrictedRelations(auth), { schema }));
+      }
+
+      // Apply sanitizers from registry if exists
+      strapi.sanitizers
+        .get('content-api.params')
+        .forEach((sanitizer) => transforms.push(sanitizer(schema)));
+
+      return pipeAsync(...transforms)(params);
     },
   },
 

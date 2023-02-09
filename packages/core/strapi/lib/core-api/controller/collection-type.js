@@ -19,9 +19,8 @@ const createCollectionTypeController = ({ contentType }) => {
      * @return {Object|Array}
      */
     async find(ctx) {
-      const { query } = ctx;
-
-      const { results, pagination } = await strapi.service(uid).find(query);
+      const qp = await this.sanitizeParams(ctx);
+      const { results, pagination } = await strapi.service(uid).find(qp);
       const sanitizedResults = await this.sanitizeOutput(results, ctx);
 
       return this.transformResponse(sanitizedResults, { pagination });

@@ -29,6 +29,17 @@ const createController = ({ contentType }) => {
 
       return sanitize.contentAPI.input(data, contentType, { auth });
     },
+
+    async sanitizeParams(ctx) {
+      const auth = getAuthFromKoaContext(ctx);
+
+      const p = await sanitize.contentAPI.params(ctx.query.filters, contentType, { auth });
+
+      return {
+        ...ctx.query,
+        filters: p,
+      };
+    },
   };
 
   let ctrl;
