@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[8128],{1200:s=>{s.exports=JSON.parse('{"label":"users","permalink":"/tags/users","allTagsPath":"/tags","count":1,"items":[{"id":"docs/core/admin/hooks/use-admin-users","title":"useAdminUsers","description":"API reference for the useAdminUsers hook","permalink":"/docs/core/admin/hooks/use-admin-users"}]}')}}]);
